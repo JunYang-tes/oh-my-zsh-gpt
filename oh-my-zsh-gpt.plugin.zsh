@@ -80,6 +80,7 @@ function command_not_found_handler() {
 function _preexec() {
   local cmd="$1"
   if is_question "$cmd"; then
+    setopt NO_NOMATCH
     q=$cmd[2,-1]
     resp=$(ask_gpt "$q")
 
@@ -94,5 +95,9 @@ function _preexec() {
     return 1
   fi
 }
+function _precmd() {
+  setopt NOMATCH
+}
 
 add-zsh-hook preexec _preexec
+add-zsh-hook precmd _precmd
