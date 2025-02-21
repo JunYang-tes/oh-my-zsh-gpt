@@ -44,15 +44,21 @@ For other questions, respond with 'exp: <content>'. \
 System information: The current system is running on Linux kernel version $kernel_version, \
 with $os_info as the operating system. \
 Note: Be aware that user questions may not be isolated and may be related to previous questions."
-  local user_prompt="$*"
+  local user_prompt=$(echo "$*" | sed "s/\\\\'/'/g")
   local messages='[]'
   if [[ -f $random_name ]]; then
     messages=$(cat $random_name)
+  if ! jq empty <<< "$messages" >/dev/null 2>&1; then
+    echo "Invalid JSON in $random_name, initializing messages."
+    messages='[]'
+  fi
   else
-    messages=$(echo $messages | jq --arg p "$system_prompt" '[{"role": "system", "content": $p}] + .')
+    local system_prompt_json=$(echo "$system_prompt" | jq -R .)
+    messages=$(echo $messages | jq --argjson p "$system_prompt_json" '[{"role": "system", "content": $p}] + .')
   fi
 
-  messages=$(echo $messages | jq --arg p "$user_prompt" '. + [{"role": "user", "content": $p}]')
+  local user_prompt_json=$(echo "$user_prompt" | jq -R .)
+  messages=$(echo $messages | jq --argjson p "$user_prompt_json" '. + [{"role": "user", "content": $p}]')
  
   local data=$(jq -n --argjson messages "$messages" --arg model "$ZSH_GPT_OPENAI_MODEL" '{"model": $model,"messages": $messages,"temperature": 0.7}')
   local resp=$(curl $ZSH_GPT_OPENAI_HOST/v1/chat/completions -s \
@@ -64,7 +70,8 @@ Note: Be aware that user questions may not be isolated and may be related to pre
   
   local resp_content=$(echo $resp | jq '.choices[0].message.content' -r)
   echo $resp_content
-  messages=$(echo $messages | jq --arg c "$resp_content" '. + [{"role": "assistant", "content": $c}]')
+  local resp_content_json=$(echo "$resp_content" | jq -R .)
+  messages=$(echo $messages | jq --argjson c "$resp_content_json" '. + [{"role": "assistant", "content": $c}]')
   echo $messages > $random_name
 }
 
