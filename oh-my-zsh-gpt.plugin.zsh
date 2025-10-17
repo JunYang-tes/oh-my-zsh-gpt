@@ -61,7 +61,7 @@ Note: Be aware that user questions may not be isolated and may be related to pre
   messages=$(echo $messages | jq --argjson p "$user_prompt_json" '. + [{"role": "user", "content": $p}]')
  
   local data=$(jq -n --argjson messages "$messages" --arg model "$ZSH_GPT_OPENAI_MODEL" '{"model": $model,"messages": $messages,"temperature": 0.7}')
-  local resp=$(curl $ZSH_GPT_OPENAI_HOST/v1/chat/completions -s \
+  local resp=$(curl -X POST $ZSH_GPT_OPENAI_HOST/v1/chat/completions -s \
    -H "Content-Type: application/json" \
    -H "Authorization: Bearer $ZSH_GPT_OPENAI_KEY" \
    -d "$data")
