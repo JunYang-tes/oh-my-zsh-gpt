@@ -22,4 +22,4 @@ export ZSH_GPT_OPENAI_KEY="your key"
 ```
 
 ## Show case
-![](./screenshot.png)
+![](./demo.gif)
