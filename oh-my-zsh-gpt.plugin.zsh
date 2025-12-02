@@ -29,7 +29,8 @@ function is_question() {
 log_file=/tmp/gpt.log
 function write_log() {
   local msg=$1
-  echo $msg >> $log_file
+  printf -s "$msg" >> $log_file
+  printf -s "\n" >> $log_file
 }
 
 random_name=$(mktemp -u /tmp/gpt_messages_XXXXXX.json)
@@ -47,18 +48,18 @@ Note: Be aware that user questions may not be isolated and may be related to pre
   local user_prompt=$(echo "$*" | sed "s/\\\\'/'/g")
   local messages='[]'
   if [[ -f $random_name ]]; then
-    messages=$(cat $random_name)
+    messages=$(cat "$random_name")
   if ! jq empty <<< "$messages" >/dev/null 2>&1; then
     echo "Invalid JSON in $random_name, initializing messages."
     messages='[]'
   fi
   else
     local system_prompt_json=$(echo "$system_prompt" | jq -R .)
-    messages=$(echo $messages | jq --argjson p "$system_prompt_json" '[{"role": "system", "content": $p}] + .')
+    messages=$(echo "$messages" | jq --argjson p "$system_prompt_json" '[{"role": "system", "content": $p}] + .')
   fi
 
   local user_prompt_json=$(echo "$user_prompt" | jq -R .)
-  messages=$(echo $messages | jq --argjson p "$user_prompt_json" '. + [{"role": "user", "content": $p}]')
+  messages=$(echo "$messages" | jq --argjson p "$user_prompt_json" '. + [{"role": "user", "content": $p}]')
  
   local data=$(jq -n --argjson messages "$messages" --arg model "$ZSH_GPT_OPENAI_MODEL" '{"model": $model,"messages": $messages,"temperature": 0.7}')
   local resp=$(curl -X POST $ZSH_GPT_OPENAI_HOST/v1/chat/completions -s \
@@ -68,11 +69,10 @@ Note: Be aware that user questions may not be isolated and may be related to pre
   write_log "Request: $data"
   write_log "Response: $resp"
   
-  local resp_content=$(echo $resp | jq '.choices[0].message.content' -r)
-  echo $resp_content
-  local resp_content_json=$(echo "$resp_content" | jq -R .)
-  messages=$(echo $messages | jq --argjson c "$resp_content_json" '. + [{"role": "assistant", "content": $c}]')
-  echo $messages > $random_name
+  local resp_content=$(printf '%s' "$resp" | jq -r '.choices[0].message.content')
+  echo "$resp_content"
+  messages=$(echo "$messages" | jq --argjson resp_json "$resp" '. + [{"role": "assistant", "content": $resp_json.choices[0].message.content}]')
+  printf '%s' "$messages" > "$random_name"
 }
 
 function command_not_found_handler() {
