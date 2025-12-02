@@ -83,61 +83,80 @@ Note: Be aware that user questions may not be isolated and may be related to pre
   printf '%s' "$messages" > "$random_name"
 }
 
-# --- 核心修改：自定义回车键 Widget ---
-
 function gpt-magic-enter() {
   # 检查 Buffer 是否以逗号开头
   if [[ "$BUFFER" == ,* ]]; then
-    # 1. 获取查询内容（去掉开头的逗号）
     local query="${BUFFER:1}"
     
-    # 2. 将当前行保存到 Zsh 历史记录中，方便按上箭头找回
+    # 将当前行保存到 Zsh 历史记录
     print -s "$BUFFER"
     
-    # 3. 模拟回车换行效果，打印用户输入的内容
-    echo # 输出一个换行
-    echo "> $query" # 可选：回显一下查询内容
-    
-    # 4. 通知 ZLE 我们要进行输出，重置提示符位置
     zle -I 
+
+    # --- 修复点 1: 关闭作业监控，消除 [2] 11515 done 这种噪音 ---
+    setopt localoptions no_monitor
+
+    # 1. 创建临时文件用于接收结果
+    local tmp_resp=$(mktemp)
+
+    # 2. 在后台执行 ask_gpt
+    ask_gpt "$query" > "$tmp_resp" &
+    local pid=$! # 获取后台进程 ID
+
+    # 3. 定义动画字符 (Braille 风格)
+    local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
     
-    # 5. 调用 GPT
-    # 这里会阻塞直到 GPT 返回。为了用户体验，你也可以考虑在这里加个 "Thinking..." 的提示
-    local resp=$(ask_gpt "$query")
-    
-    # 6. 处理返回结果
+    # 隐藏光标
+    printf "\e[?25l"
+
+    # 4. 循环检查进程
+    while kill -0 $pid 2>/dev/null; do
+      # --- 修复点 2: 使用 $(( )) 明确告诉 Zsh 这是数学运算 ---
+      local idx=$(( i++ % 10 )) 
+      # Zsh 字符串截取：${var:offset:length}
+      local char="${spin:$idx:1}"
+      
+      printf "\r\e[36mThinking... %s\e[0m" "$char"
+      sleep 0.1
+    done
+
+    # 5. 清理现场
+    printf "\r\e[2K" # 清除整行
+    printf "\e[?25h" # 恢复光标
+
+    # 6. 读取结果
+    local resp=$(cat "$tmp_resp")
+    rm "$tmp_resp"
+
+    # 7. 处理逻辑
     if [[ "$resp" == cmd:* ]]; then
-      # 如果是命令，将 Buffer 替换为该命令，让用户决定是否执行
-      # 这里的 ${resp#cmd: } 是去除前缀
       local cmd_content="${resp#cmd: }"
-      # 去除可能存在的首尾空白
-      cmd_content="$(echo "$cmd_content" | xargs)"
+      cmd_content="$(echo "$cmd_content" | xargs)" # trim
       
       BUFFER="$cmd_content"
-      CURSOR=$#BUFFER # 光标移动到末尾
+      CURSOR=$#BUFFER 
       
     elif [[ "$resp" == exp:* ]]; then
-      # 如果是解释，直接打印出来，并清空当前行
-      echo "${resp#exp: }"
-      BUFFER="" 
-      
-    else
-      # 未知格式，直接打印
-      echo "$resp"
       BUFFER=""
+      zle -I
+      echo "${resp#exp: }"
+    else
+      if [[ -n "$resp" ]]; then
+        BUFFER=""
+        zle -I
+        echo "$resp"
+      fi
     fi
     
-    # 7. 如果我们只是打印了解释，就不需要执行任何命令了，保持 Buffer 为空或新命令即可
-    # 不需要调用 zle .accept-line，因为我们已经处理完了
-    
+    #zle redisplay
+
   else
-    # 如果不是逗号开头，执行默认的回车行为（Zsh 的标准解析和执行）
+    # 正常回车
     zle .accept-line
   fi
 }
 
-# 注册 Widget
+# 注册 Widget (如果你之前运行过，最好重启终端或者重新 source 一下，确保旧的定义被覆盖)
 zle -N gpt-magic-enter
-
-# 绑定回车键到这个 Widget
 bindkey '^M' gpt-magic-enter
